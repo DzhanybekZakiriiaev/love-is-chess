@@ -277,61 +277,53 @@ body {
   background: #fff8fb;
 }
 
-/* ── VN scene area (portrait + background) ───────────────── */
+/* ── VN scene area — sprite fills the whole container ───── */
 
 .vn-scene {
   position: relative;
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  /* Anime-style soft room background */
-  background:
-    linear-gradient(180deg, #ffe8f2 0%, #ffd0e8 40%, #ffc8e0 60%, #ffb8d4 100%);
+  background: #fff;          /* white while image loads */
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: flex-end;
-  padding-bottom: 10px;
 }
 
-/* Decorative window/room lines in background */
-.vn-scene::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background:
-    repeating-linear-gradient(90deg, rgba(255,255,255,0.15) 0px, rgba(255,255,255,0.15) 1px, transparent 1px, transparent 80px),
-    repeating-linear-gradient(0deg, rgba(255,255,255,0.10) 0px, rgba(255,255,255,0.10) 1px, transparent 1px, transparent 60px);
-  pointer-events: none;
-}
-
-.vn-scene::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 40%;
-  background: linear-gradient(0deg, rgba(255,220,235,0.6) 0%, transparent 100%);
-  pointer-events: none;
-}
-
-/* ── Portrait ────────────────────────────────────────────── */
+/* ── Full-bleed sprite ───────────────────────────────────── */
 
 .vn-portrait-wrap {
-  position: relative;
-  z-index: 1;
-  margin-bottom: 6px;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
 }
 
 .vn-portrait-img {
-  width: 110px;
-  height: 110px;
-  object-fit: cover;
-  border-radius: 50%;
-  border: 3px solid #fff;
-  box-shadow: 0 0 0 3px #ff69b4, 0 4px 20px rgba(255, 100, 150, 0.4);
+  width: auto;
+  height: 100%;
+  max-width: 100%;
+  object-fit: contain;
+  object-position: center top;
   display: block;
+  margin: 0 auto;
+  border-radius: 0;
+  border: none;
+  box-shadow: none;
+}
+
+/* Soft gradient at the bottom so text is readable */
+.vn-portrait-wrap::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    transparent 40%,
+    rgba(255, 240, 248, 0.55) 70%,
+    rgba(255, 230, 242, 0.85) 100%
+  );
+  pointer-events: none;
 }
 
 /* ── Floating hearts ─────────────────────────────────────── */
@@ -339,21 +331,21 @@ body {
 .floating-hearts {
   position: absolute;
   inset: 0;
+  z-index: 2;
   pointer-events: none;
-  overflow: visible;
+  overflow: hidden;
 }
 
 .float-heart {
   position: absolute;
-  bottom: 8px;
+  bottom: 60px;
   left: 50%;
-  font-size: 13px;
+  font-size: 16px;
   color: var(--color, #ff69b4);
   opacity: 0;
   animation: floatUp 2.8s ease-in infinite;
   animation-delay: var(--delay, 0s);
-  /* spread hearts left/right based on index */
-  --offset: calc((var(--delay, 0s) / 0.6 - 2) * 16px);
+  --offset: calc((var(--delay, 0s) / 0.6 - 2) * 20px);
   transform: translateX(calc(-50% + var(--offset)));
 }
 
@@ -368,7 +360,7 @@ body {
 
 .vn-name-strip {
   position: relative;
-  z-index: 1;
+  z-index: 3;
   text-align: center;
 }
 
@@ -396,10 +388,9 @@ body {
 
 .vn-meters {
   position: relative;
-  z-index: 1;
+  z-index: 3;
   width: 100%;
-  max-width: 260px;
-  padding: 6px 10px 2px;
+  padding: 6px 14px 10px;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -409,7 +400,7 @@ body {
 
 .vn-dialogue-area {
   flex-shrink: 0;
-  background: rgba(255, 255, 255, 0.96);
+  background: #ffffff;
   border-top: 2px solid #ffb6c1;
 }
 
@@ -472,15 +463,16 @@ body {
   top: 8px;
   right: 8px;
   z-index: 10;
-  background: rgba(255,255,255,0.8);
+  background: rgba(255, 255, 255, 0.88);
   border-radius: 50%;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 0.8rem;
-  border: 1px solid #ffb6c1;
+  border: 1.5px solid #ffb6c1;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
 }
 
 /* ── Love meter ──────────────────────────────────────────── */
