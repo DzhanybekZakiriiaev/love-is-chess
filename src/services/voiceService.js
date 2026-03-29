@@ -50,17 +50,18 @@ export async function speakText(text, pieceType = null, options = {}) {
   if (elKey && pieceType) {
     const voiceId = ELEVENLABS_VOICES[pieceType] || ELEVENLABS_VOICES.P;
     try {
-      await speakElevenLabs(text, voiceId, elKey);
+      await speakElevenLabs(text, voiceId, elKey, options.onlyIf);
       return;
     } catch (e) {
       console.warn('ElevenLabs failed, falling back to Web Speech:', e);
     }
   }
 
+  if (options.onlyIf && !options.onlyIf()) return;
   speakWebSpeech(text, pieceType);
 }
 
-async function speakElevenLabs(text, voiceId, apiKey) {
+async function speakElevenLabs(text, voiceId, apiKey, onlyIf) {
   const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
     method: 'POST',
     headers: {
@@ -78,7 +79,15 @@ async function speakElevenLabs(text, voiceId, apiKey) {
   if (!res.ok) throw new Error(`ElevenLabs ${res.status}`);
 
   const blob = await res.blob();
+  // Piece may be captured / chat closed while the TTS request was in flight
+  if (onlyIf && !onlyIf()) return;
+
   const url  = URL.createObjectURL(blob);
+  if (onlyIf && !onlyIf()) {
+    URL.revokeObjectURL(url);
+    return;
+  }
+
   const audio = new Audio(url);
   activeObjectUrl = url;
   activeAudio = audio;
@@ -98,6 +107,11 @@ async function speakElevenLabs(text, voiceId, apiKey) {
       cleanup();
       reject(err);
     };
+    if (onlyIf && !onlyIf()) {
+      cleanup();
+      resolve();
+      return;
+    }
     audio.play().catch((err) => {
       cleanup();
       reject(err);

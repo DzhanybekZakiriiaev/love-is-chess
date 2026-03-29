@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useMemo, useLayoutEffect } from 'react';
+import { useState, useCallback, useRef, useMemo, useLayoutEffect, useEffect } from 'react';
 import { Chess } from 'chess.js';
 import {
   getPieceGreeting,
@@ -191,6 +191,17 @@ export function useChessGame() {
 
   const refreshBoard = () => setBoard(chess.board().map(r => [...r]));
 
+  // Close chat if the selected white piece is gone (e.g. captured by Black) or square is not white.
+  useEffect(() => {
+    if (!selectedPiece) return;
+    const p = chess.get(selectedPiece.square);
+    if (!p || p.color !== 'w') {
+      stopSpeaking();
+      selectedPieceRef.current = null;
+      setSelectedPiece(null);
+    }
+  }, [board, selectedPiece, chess]);
+
   // ── Piece state helpers ───────────────────────────────────────────────────
 
   function addMsgToPiece(square, msg) {
@@ -231,7 +242,9 @@ export function useChessGame() {
       throw e;
     }
     speakText(finalText, type, {
-      onlyIf: () => selectedPieceRef.current?.square === square,
+      onlyIf: () =>
+        selectedPieceRef.current?.square === square &&
+        chess.get(square)?.color === 'w',
     });
     return finalText;
   }
@@ -323,6 +336,7 @@ export function useChessGame() {
 
     if (selectedPieceRef.current && defectedSquares.includes(selectedPieceRef.current.square)) {
       stopSpeaking();
+      selectedPieceRef.current = null;
       setSelectedPiece(null);
     }
 
@@ -351,6 +365,11 @@ export function useChessGame() {
     refreshBoard();
 
     if (capturedType) {
+      if (selectedPieceRef.current?.square === move.to) {
+        stopSpeaking();
+        selectedPieceRef.current = null;
+        setSelectedPiece(null);
+      }
       // Remove captured white piece state; surviving pieces lose trust & love
       setPieceStates(prev => {
         const next = { ...prev };
