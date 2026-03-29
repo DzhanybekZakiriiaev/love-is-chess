@@ -1,11 +1,10 @@
-import { useState, useCallback, useRef, useMemo } from 'react';
+import { useState, useCallback, useRef, useMemo, useLayoutEffect } from 'react';
 import { Chess } from 'chess.js';
 import {
   getPieceGreeting,
   getPieceResponse,
   getPieceMoveResponse,
   getPieceRefusalResponse,
-  getEnemyTaunt,
 } from '../services/claudeService';
 import {
   buildPieceSystemPrompt,
@@ -79,13 +78,90 @@ function initPieceStates(chess) {
   return states;
 }
 
-// ── Simple bot: captures first, else random ───────────────────────────────────
-function makeAiMove(chess) {
-  const moves    = chess.moves({ verbose: true });
+/** Below this trust, a white piece (except the King) defects — becomes Black and is bot-controlled. */
+export const DEFECT_TRUST_THRESHOLD = 10;
+
+function squareRank(sq) {
+  return parseInt(sq[1], 10);
+}
+
+/** Any white unit on rank 5+ (crossed the midline toward Black). */
+function whiteInvadesBlackHalf(chess) {
+  const board = chess.board();
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      const p = board[r][c];
+      if (!p || p.color !== 'w') continue;
+      const rank = 8 - r;
+      if (rank >= 5) return true;
+    }
+  }
+  return false;
+}
+
+/** Black has at least one piece on rank 4 or below (deep in White's camp) — easy to overpress. */
+function blackOverextended(chess) {
+  const board = chess.board();
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      const p = board[r][c];
+      if (!p || p.color !== 'b') continue;
+      const rank = 8 - r;
+      if (rank <= 4) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Heuristic bot: prefers captures, reacts when White advances early, avoids moving the same
+ * black piece twice in a row when alternatives exist, and discourages reckless deep pushes in the opening.
+ */
+function makeAiMove(chess, lastBlackPieceSquare) {
+  const moves = chess.moves({ verbose: true });
   if (!moves.length) return null;
-  const captures = moves.filter(m => m.captured);
-  const pool     = captures.length ? captures : moves;
-  return pool[Math.floor(Math.random() * pool.length)];
+
+  const halfMoves = chess.history().length;
+  const opening = halfMoves < 24;
+  const invaded = opening && whiteInvadesBlackHalf(chess);
+  const overext = opening && blackOverextended(chess);
+
+  const scored = moves.map(m => {
+    let score = Math.random() * 14;
+    const toRank = squareRank(m.to);
+    const fromRank = squareRank(m.from);
+
+    if (m.captured) score += 100;
+    if (m.promotion) score += 45;
+
+    if (lastBlackPieceSquare && m.from === lastBlackPieceSquare) score -= 80;
+
+    if (invaded) {
+      if (m.captured) score += 35;
+      if (m.san.includes('+')) score += 28;
+    }
+
+    if (overext && !m.captured) {
+      if (toRank <= 3) score -= 60;
+      if (toRank <= 2) score -= 35;
+      if (fromRank >= 7 && m.piece !== 'p') score += 20;
+    }
+
+    if (opening && !overext && ['n', 'b'].includes(m.piece) && fromRank === 8) score += 14;
+
+    if (opening && !overext && m.piece === 'p') {
+      const central = ['d5', 'e5', 'd6', 'e6', 'c6', 'f6', 'c5', 'f5'];
+      if (central.includes(m.to)) score += 20;
+    }
+
+    return { m, score };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+  const best = scored[0].score;
+  const tier = scored.filter(x => x.score >= best - 30);
+  const pool = tier.slice(0, Math.min(tier.length, 7));
+  return pool[Math.floor(Math.random() * pool.length)].m;
 }
 
 // ── Hook ─────────────────────────────────────────────────────────────────────
@@ -108,6 +184,8 @@ export function useChessGame() {
   // Keep refs in sync for reading inside async callbacks
   const pieceStatesRef   = useRef(pieceStates);
   const selectedPieceRef = useRef(selectedPiece);
+  /** Square where the black piece that last moved currently sits (avoid same piece two turns in a row). */
+  const lastBlackPieceSquareRef = useRef(null);
   pieceStatesRef.current   = pieceStates;
   selectedPieceRef.current = selectedPiece;
 
@@ -209,17 +287,66 @@ export function useChessGame() {
     }
   }
 
+  // When trust drops below threshold, convert piece to Black in chess.js and drop personality state.
+  useLayoutEffect(() => {
+    const victims = Object.entries(pieceStates).filter(
+      ([, s]) => s.trust < DEFECT_TRUST_THRESHOLD
+    );
+    if (victims.length === 0) return;
+
+    const defectedSquares = [];
+    const logLines = [];
+
+    for (const [sq, s] of victims) {
+      const p = chess.get(sq);
+      if (!p || p.color !== 'w' || p.type === 'k') continue;
+      const pieceType = p.type;
+      chess.remove(sq);
+      if (!chess.put({ type: pieceType, color: 'b' }, sq)) {
+        chess.put({ type: pieceType, color: 'w' }, sq);
+        continue;
+      }
+      defectedSquares.push(sq);
+      const typeLabel = PIECE_META[pieceType.toUpperCase()]?.name || pieceType;
+      logLines.push(`${s.name} (${typeLabel}) has lost all trust — she now fights for Black.`);
+    }
+
+    if (defectedSquares.length === 0) return;
+
+    setPieceStates(prev => {
+      const next = { ...prev };
+      defectedSquares.forEach(sq => {
+        delete next[sq];
+      });
+      return next;
+    });
+
+    if (selectedPieceRef.current && defectedSquares.includes(selectedPieceRef.current.square)) {
+      stopSpeaking();
+      setSelectedPiece(null);
+    }
+
+    setEventLog(ev => [
+      ...ev,
+      ...logLines.map(text => ({ id: nextId(), type: 'system', text })),
+    ]);
+    refreshBoard();
+    checkGameState();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pieceStates]);
+
   // ── AI turn ───────────────────────────────────────────────────────────────
 
-  async function runAiTurn() {
+  function runAiTurn() {
     setIsThinking(true);
 
-    const move = makeAiMove(chess);
+    const move = makeAiMove(chess, lastBlackPieceSquareRef.current);
     if (!move) { setIsThinking(false); return; }
 
     const capturedType = move.captured?.toUpperCase() || null;
 
     chess.move(move);
+    lastBlackPieceSquareRef.current = move.to;
     setLastMove({ from: move.from, to: move.to });
     refreshBoard();
 
@@ -237,21 +364,6 @@ export function useChessGame() {
         });
         return next;
       });
-
-      try {
-        const pieceName = PIECE_META[capturedType]?.name || capturedType;
-        const taunt     = await getEnemyTaunt(pieceName);
-        if (taunt) {
-          const cur = selectedPieceRef.current;
-          if (cur) addMsgToPiece(cur.square, { type: 'enemy', text: taunt });
-          if (cur) {
-            const tauntSquare = cur.square;
-            speakText(taunt, 'ENEMY', {
-              onlyIf: () => selectedPieceRef.current?.square === tauntSquare,
-            });
-          }
-        }
-      } catch {}
     }
 
     // Pieces under attack after the move lose trust & love
@@ -400,6 +512,9 @@ export function useChessGame() {
       return;
     }
 
+    // Only white pieces have chat; defected (black) pieces are bot-controlled
+    if (piece.color !== 'w') return;
+
     const type = piece.type.toUpperCase();
 
     // Toggle off
@@ -467,6 +582,7 @@ export function useChessGame() {
 
   function resetGame() {
     stopSpeaking();
+    lastBlackPieceSquareRef.current = null;
     chess.reset();
     setBoard(chess.board());
     setSelectedPiece(null);

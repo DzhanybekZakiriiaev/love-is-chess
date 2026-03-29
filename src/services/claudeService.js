@@ -1,41 +1,8 @@
-import { ENEMY_PERSONALITY } from '../data/piecePersonalities';
-
 const API_URL = 'https://api.anthropic.com/v1/messages';
 const MODEL   = 'claude-haiku-4-5-20251001';
 
 function getApiKey() {
   return localStorage.getItem('claude_api_key') || process.env.REACT_APP_ANTHROPIC_API_KEY || '';
-}
-
-// ── Non-streaming (enemy taunts) ──────────────────────────────────────────────
-
-async function callClaude(systemPrompt, userMessage, maxTokens = 100) {
-  const apiKey = getApiKey();
-  if (!apiKey) throw new Error('NO_API_KEY');
-
-  const res = await fetch(API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true',
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: maxTokens,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userMessage }],
-    }),
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message || `API error ${res.status}`);
-  }
-
-  const data = await res.json();
-  return data.content[0].text.trim();
 }
 
 // ── Streaming (all piece responses) ──────────────────────────────────────────
@@ -138,13 +105,6 @@ export function getPieceRefusalResponse(sysPrompt, pieceName, square, targetSqua
     ? `${ctx(square, visibleBoard)} The King ordered you, ${pieceName}, to move to ${targetSquare}. You REFUSE. One defiant or hurt sentence.`
     : `${ctx(square, visibleBoard)} The King ordered you, ${pieceName}, to move to ${targetSquare} — but that move is illegal. Refuse in character in one sentence.`;
   return streamClaude(sysPrompt, prompt, 90, onChunk);
-}
-
-// ── Enemy taunts (non-streaming) ──────────────────────────────────────────────
-
-export async function getEnemyTaunt(pieceName) {
-  const context = `Black just captured white's ${pieceName}. Taunt the King in one sharp, cruel sentence.`;
-  return callClaude(ENEMY_PERSONALITY.systemPrompt, context, 80);
 }
 
 export function hasApiKey() {
