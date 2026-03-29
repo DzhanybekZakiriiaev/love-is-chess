@@ -2,12 +2,19 @@ import React, { useState } from 'react';
 import ChessBoard from './components/ChessBoard';
 import PieceChat from './components/PieceChat';
 import Settings from './components/Settings';
+import TitleScreen from './components/TitleScreen';
+import MultiplayerLobby from './components/MultiplayerLobby';
+import MultiplayerGame from './components/MultiplayerGame';
 import { useChessGame } from './hooks/useChessGame';
 import { hasApiKey } from './services/claudeService';
 import { isVoiceEnabled, setVoiceEnabled } from './services/voiceService';
 import './App.css';
 
 export default function App() {
+  const [screen, setScreen] = useState('title');
+  // Multiplayer session info
+  const [mpConfig, setMpConfig] = useState(null);
+
   const {
     board,
     selectedPiece,
@@ -46,6 +53,46 @@ export default function App() {
   const inCheck = chess.inCheck() && chess.turn() === 'w';
   const latestEvent = eventLog[eventLog.length - 1];
 
+  // ── Screens ───────────────────────────────────────────────────────────────
+
+  if (screen === 'title') {
+    return (
+      <TitleScreen
+        onSingleplayer={() => setScreen('game')}
+        onMultiplayer={() => setScreen('multiplayer-lobby')}
+      />
+    );
+  }
+
+  if (screen === 'multiplayer-lobby') {
+    return (
+      <MultiplayerLobby
+        onBack={() => setScreen('title')}
+        onSessionJoined={(config) => {
+          setMpConfig(config);
+          setScreen('multiplayer-game');
+        }}
+      />
+    );
+  }
+
+  if (screen === 'multiplayer-game' && mpConfig) {
+    return (
+      <MultiplayerGame
+        isHost={mpConfig.isHost}
+        myPieceType={mpConfig.myPieceType}
+        session={mpConfig.session}
+        playerName={mpConfig.playerName}
+        onLeave={() => {
+          setMpConfig(null);
+          setScreen('title');
+        }}
+      />
+    );
+  }
+
+  // ── Singleplayer game ─────────────────────────────────────────────────────
+
   return (
     <div className="app">
       <header className="app-header">
@@ -62,6 +109,13 @@ export default function App() {
           </button>
           <button className="btn-reset" onClick={resetGame}>New Game</button>
           <button className="btn-settings" onClick={() => setShowSettings(true)} title="Settings">⚙</button>
+          <button
+            className="btn-reset"
+            style={{ background: '#c0a0b0' }}
+            onClick={() => setScreen('title')}
+          >
+            Menu
+          </button>
         </div>
       </header>
 
