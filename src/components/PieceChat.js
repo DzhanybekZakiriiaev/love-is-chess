@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { isMicSupported, startListening } from '../services/voiceService';
+import { isMicSupported, startListening, stopSpeaking } from '../services/voiceService';
 import {
   PIECE_META,
   PIECE_SPRITE,
@@ -108,11 +108,18 @@ function MessageBubble({ msg, pieceName, loveColor }) {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function PieceChat({ selectedPiece, pieceState, isThinking, onSendMessage, onClose }) {
+export default function PieceChat({
+  selectedPiece,
+  pieceState,
+  isThinking,
+  onSendMessage,
+  onClose,
+}) {
   const [input,       setInput]       = useState('');
   const [isListening, setIsListening] = useState(false);
-  const feedRef  = useRef(null);
-  const micAvail = isMicSupported();
+  const feedRef   = useRef(null);
+  const inputRef  = useRef(null);
+  const micAvail  = isMicSupported();
 
   const messages = pieceState?.messages || [];
   const trust    = pieceState?.trust ?? 70;
@@ -127,6 +134,16 @@ export default function PieceChat({ selectedPiece, pieceState, isThinking, onSen
   }, [msgCount, isThinking]);
 
   useEffect(() => { setInput(''); }, [selectedPiece?.square]);
+
+  useEffect(() => {
+    if (selectedPiece) inputRef.current?.focus();
+  }, [selectedPiece?.square]);
+
+  useEffect(() => {
+    return () => {
+      stopSpeaking();
+    };
+  }, [selectedPiece?.square]);
 
   if (!selectedPiece) {
     return (
@@ -160,11 +177,25 @@ export default function PieceChat({ selectedPiece, pieceState, isThinking, onSen
   }
 
   return (
-    <div className="piece-chat">
+    <div
+      className="piece-chat"
+      onBlurCapture={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget)) stopSpeaking();
+      }}
+    >
 
       {/* ── VN scene: background + portrait + floating hearts ── */}
       <div className="vn-scene">
-        <button className="btn-close portrait-close" onClick={onClose} title="Close">✕</button>
+        <button
+          className="btn-close portrait-close"
+          onClick={() => {
+            stopSpeaking();
+            onClose();
+          }}
+          title="Close"
+        >
+          ✕
+        </button>
 
         {/* Portrait with floating hearts */}
         <div className="vn-portrait-wrap">
@@ -221,6 +252,7 @@ export default function PieceChat({ selectedPiece, pieceState, isThinking, onSen
 
         <div className="vn-input-row">
           <textarea
+            ref={inputRef}
             className="chat-input"
             rows={1}
             placeholder={`Speak to ${name}...`}

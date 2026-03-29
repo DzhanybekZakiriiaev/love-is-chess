@@ -34,8 +34,16 @@ export function setVoiceEnabled(enabled) {
 
 // ── TTS ───────────────────────────────────────────────────────────────────
 
-export async function speakText(text, pieceType = null) {
+/** Active ElevenLabs blob URL so we can revoke on stop */
+let activeObjectUrl = null;
+let activeAudio = null;
+
+export async function speakText(text, pieceType = null, options = {}) {
   if (!isVoiceEnabled()) return;
+  if (options.onlyIf && !options.onlyIf()) return;
+
+  // One utterance at a time — avoids overlap when new lines play after closing chat or switching piece
+  stopSpeaking();
 
   const elKey = getElevenLabsKey();
 
@@ -72,10 +80,28 @@ async function speakElevenLabs(text, voiceId, apiKey) {
   const blob = await res.blob();
   const url  = URL.createObjectURL(blob);
   const audio = new Audio(url);
+  activeObjectUrl = url;
+  activeAudio = audio;
   return new Promise((resolve, reject) => {
-    audio.onended = () => { URL.revokeObjectURL(url); resolve(); };
-    audio.onerror = reject;
-    audio.play();
+    const cleanup = () => {
+      if (activeAudio === audio) activeAudio = null;
+      if (activeObjectUrl === url) {
+        URL.revokeObjectURL(url);
+        activeObjectUrl = null;
+      }
+    };
+    audio.onended = () => {
+      cleanup();
+      resolve();
+    };
+    audio.onerror = (err) => {
+      cleanup();
+      reject(err);
+    };
+    audio.play().catch((err) => {
+      cleanup();
+      reject(err);
+    });
   });
 }
 
@@ -118,6 +144,14 @@ function speakWebSpeech(text, pieceType) {
 }
 
 export function stopSpeaking() {
+  if (activeAudio) {
+    activeAudio.pause();
+    activeAudio = null;
+  }
+  if (activeObjectUrl) {
+    URL.revokeObjectURL(activeObjectUrl);
+    activeObjectUrl = null;
+  }
   if (window.speechSynthesis) window.speechSynthesis.cancel();
 }
 

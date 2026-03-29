@@ -13,7 +13,7 @@ import {
   getNameForInstance,
   PIECE_META,
 } from '../data/piecePersonalities';
-import { speakText } from '../services/voiceService';
+import { speakText, stopSpeaking } from '../services/voiceService';
 
 // ── Move intent parser ────────────────────────────────────────────────────────
 function parseMoveIntent(message) {
@@ -152,7 +152,9 @@ export function useChessGame() {
       });
       throw e;
     }
-    speakText(finalText, type);
+    speakText(finalText, type, {
+      onlyIf: () => selectedPieceRef.current?.square === square,
+    });
     return finalText;
   }
 
@@ -242,7 +244,12 @@ export function useChessGame() {
         if (taunt) {
           const cur = selectedPieceRef.current;
           if (cur) addMsgToPiece(cur.square, { type: 'enemy', text: taunt });
-          speakText(taunt, 'ENEMY');
+          if (cur) {
+            const tauntSquare = cur.square;
+            speakText(taunt, 'ENEMY', {
+              onlyIf: () => selectedPieceRef.current?.square === tauntSquare,
+            });
+          }
         }
       } catch {}
     }
@@ -387,13 +394,22 @@ export function useChessGame() {
       return;
     }
 
-    if (!piece) { setSelectedPiece(null); return; }
+    if (!piece) {
+      stopSpeaking();
+      setSelectedPiece(null);
+      return;
+    }
 
     const type = piece.type.toUpperCase();
 
     // Toggle off
-    if (cur?.square === square) { setSelectedPiece(null); return; }
+    if (cur?.square === square) {
+      stopSpeaking();
+      setSelectedPiece(null);
+      return;
+    }
 
+    if (cur && cur.square !== square) stopSpeaking();
     setSelectedPiece({ square, type });
 
     // First-time greeting
@@ -450,6 +466,7 @@ export function useChessGame() {
   // ── Reset ─────────────────────────────────────────────────────────────────
 
   function resetGame() {
+    stopSpeaking();
     chess.reset();
     setBoard(chess.board());
     setSelectedPiece(null);
