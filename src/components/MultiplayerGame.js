@@ -10,15 +10,161 @@ import mpService from '../services/multiplayerService';
 
 const PIECE_LABELS  = { K: 'King', Q: 'Queen', R: 'Rook', B: 'Bishop', N: 'Knight', P: 'Pawn' };
 const PIECE_SYMBOLS = { K: '♔', Q: '♕', R: '♖', B: '♗', N: '♘', P: '♙' };
+const PIECE_SPRITE  = { K: 'king', Q: 'queen', R: 'rook', B: 'bishop', N: 'knight', P: 'pawn' };
 
-/**
- * @param {object} props
- * @param {boolean}  props.isHost
- * @param {string}   props.myPieceType  — piece type letter this player controls
- * @param {object}   props.session      — session object
- * @param {string}   props.playerName
- * @param {function} props.onLeave
- */
+// ── King ↔ Human player chat panel ───────────────────────────────────────────
+// Shown when King clicks on a piece type controlled by a human player.
+// No Claude bot — pure player-to-player text + optional voice call.
+
+function PlayerPieceChat({ pieceType, playerName, inCall, onStartCall, onEndCall, onClose, chatLog, onSend }) {
+  const [input, setInput] = useState('');
+  const logRef = useRef(null);
+
+  useEffect(() => {
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+  }, [chatLog?.length]);
+
+  function handleSend() {
+    const text = input.trim();
+    if (!text) return;
+    onSend(text);
+    setInput('');
+  }
+
+  return (
+    <div className="player-piece-chat">
+      {/* Header */}
+      <div className="ppc-header">
+        <div className="ppc-header-left">
+          <img
+            src={`/pieces-sprites/${PIECE_SPRITE[pieceType]}.jpg`}
+            alt={PIECE_LABELS[pieceType]}
+            className="ppc-portrait"
+            onError={e => { e.target.style.display = 'none'; }}
+          />
+          <div className="ppc-header-info">
+            <span className="ppc-piece-name">{PIECE_SYMBOLS[pieceType]} {PIECE_LABELS[pieceType]} Commander</span>
+            <span className="ppc-player-name">{playerName}</span>
+          </div>
+        </div>
+        <div className="ppc-header-right">
+          {/* Voice call button */}
+          {inCall ? (
+            <button className="ppc-call-btn ppc-call-btn--active" onClick={onEndCall} title="End voice call">
+              📵 End Call
+            </button>
+          ) : (
+            <button className="ppc-call-btn" onClick={onStartCall} title="Start voice call">
+              📞 Call
+            </button>
+          )}
+          <button className="btn-close" onClick={onClose}>✕</button>
+        </div>
+      </div>
+
+      {/* Active call indicator */}
+      {inCall && (
+        <div className="ppc-call-active-bar">
+          📞 Voice call active with {playerName}
+        </div>
+      )}
+
+      {/* Chat log */}
+      <div className="ppc-chat-log" ref={logRef}>
+        {(!chatLog || chatLog.length === 0) && (
+          <p className="ppc-empty">No messages yet. Send a command or start a call.</p>
+        )}
+        {chatLog && chatLog.map((m, i) => (
+          <div key={i} className={`ppc-msg ppc-msg-${m.from === 'king' ? 'right' : 'left'}`}>
+            <div className="ppc-bubble">
+              <span className="ppc-from">{m.from === 'king' ? '♔ King' : `${PIECE_SYMBOLS[pieceType]} ${playerName}`}</span>
+              <p>{m.text}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Input */}
+      <div className="ppc-input-row">
+        <input
+          className="ppc-input"
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleSend()}
+          placeholder={`Message ${playerName}…`}
+        />
+        <button className="ppc-send" onClick={handleSend} disabled={!input.trim()}>
+          Send ♥
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Piece player → King reply input ──────────────────────────────────────────
+
+function KingReplyInput({ onSend }) {
+  const [input, setInput] = useState('');
+  function send() {
+    if (!input.trim()) return;
+    onSend(input.trim());
+    setInput('');
+  }
+  return (
+    <>
+      <input
+        className="ppc-input"
+        value={input}
+        onChange={e => setInput(e.target.value)}
+        onKeyDown={e => e.key === 'Enter' && send()}
+        placeholder="Reply to King…"
+      />
+      <button className="ppc-send" onClick={send} disabled={!input.trim()}>Send</button>
+    </>
+  );
+}
+
+// ── King-calling banner (non-King player's panel when King is calling) ────────
+
+function KingCallingBanner() {
+  return (
+    <div className="king-calling-banner">
+      <div className="king-calling-icon">📞</div>
+      <div className="king-calling-text">
+        <strong>King is calling</strong>
+        <span>Voice call active — your mic is live</span>
+      </div>
+    </div>
+  );
+}
+
+// ── King text chat to human piece player ──────────────────────────────────────
+// Banner for the piece player showing King's text messages
+
+function KingMessageBanner({ messages, myPieceType }) {
+  const logRef = useRef(null);
+  useEffect(() => {
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+  }, [messages?.length]);
+
+  if (!messages || messages.length === 0) return null;
+  return (
+    <div className="king-msg-banner">
+      <div className="king-msg-title">♔ Messages from King</div>
+      <div className="king-msg-log" ref={logRef}>
+        {messages.map((m, i) => (
+          <div key={i} className="king-msg-row">
+            <span className="king-msg-from">{m.from === 'king' ? '♔ King' : `${PIECE_SYMBOLS[myPieceType]} You`}</span>
+            <span className="king-msg-text">{m.text}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
 export default function MultiplayerGame({ isHost, myPieceType, session, playerName, onLeave }) {
   const game = useMultiplayerGame({ isHost, myPieceType, session, playerName });
 
@@ -27,33 +173,51 @@ export default function MultiplayerGame({ isHost, myPieceType, session, playerNa
   const [showChat,     setShowChat]     = useState(false);
   const [chatInput,    setChatInput]    = useState('');
 
-  // ── Voice call (King ↔ piece-type player) ──────────────────────────────────
+  // King ↔ piece-player direct chat log (keyed by piece type)
+  const [kingChats, setKingChats] = useState({}); // { 'N': [{from, text}], ... }
+
   const voiceCall = useVoiceCall({ myPieceType, session });
 
-  // Track which piece TYPE we last opened a call for (avoid restarting same call)
   const prevCallTypeRef = useRef(null);
+  const sessionRef      = useRef(session);
+  sessionRef.current    = session;
 
+  // ── Call lifecycle (King side) ──────────────────────────────────────────────
   useEffect(() => {
     if (myPieceType !== 'K') return;
-
     const newType = game.selectedPiece?.type ?? null;
-
-    // Same type selected — no change needed (King moved to another piece of same type)
     if (newType === prevCallTypeRef.current) return;
-
-    // End previous call if there was one
-    if (prevCallTypeRef.current) {
-      voiceCall.endCall(prevCallTypeRef.current);
-    }
+    if (prevCallTypeRef.current) voiceCall.endCall(prevCallTypeRef.current);
     prevCallTypeRef.current = newType;
-
-    // Don't call own King pieces, and don't call Claude-controlled types
-    if (newType && newType !== 'K') {
-      const isHuman = game.assignedTypes.includes(newType);
-      if (isHuman) voiceCall.startCall(newType);
-    }
+    // Don't auto-start call — King presses the 📞 button manually
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game.selectedPiece?.type, myPieceType]);
+
+  // ── Listen for King→piece text messages (piece player side) ────────────────
+  useEffect(() => {
+    if (myPieceType === 'K') return;
+    const unsub = mpService.on('KING_CHAT', (msg) => {
+      setKingChats(prev => {
+        const key = myPieceType;
+        const prev_msgs = prev[key] || [];
+        return { ...prev, [key]: [...prev_msgs, { from: 'king', text: msg.text }] };
+      });
+    });
+    return () => unsub();
+  }, [myPieceType]);
+
+  // ── Listen for piece→King replies (King side) ───────────────────────────────
+  useEffect(() => {
+    if (myPieceType !== 'K') return;
+    const unsub = mpService.on('PIECE_PLAYER_REPLY', (msg) => {
+      setKingChats(prev => {
+        const key = msg.pieceType;
+        const prev_msgs = prev[key] || [];
+        return { ...prev, [key]: [...prev_msgs, { from: msg.pieceType, text: msg.text, senderName: msg.senderName }] };
+      });
+    });
+    return () => unsub();
+  }, [myPieceType]);
 
   function toggleVoice() {
     const next = !voiceOn;
@@ -62,18 +226,36 @@ export default function MultiplayerGame({ isHost, myPieceType, session, playerNa
   }
 
   function handleLeave() {
-    // End any active call before leaving
-    if (voiceCall.inCall && voiceCall.callWithType) {
-      voiceCall.endCall(voiceCall.callWithType);
-    }
+    if (voiceCall.inCall && voiceCall.callWithType) voiceCall.endCall(voiceCall.callWithType);
     mpService.leaveSession();
     mpService.disconnect();
     onLeave();
   }
 
+  function handleEndCall() {
+    const type = voiceCall.callWithType ?? prevCallTypeRef.current;
+    voiceCall.endCall(type);
+  }
+
+  function handleStartCall(targetType) {
+    voiceCall.startCall(targetType);
+  }
+
+  // King sends text to a human piece player
+  function handleKingSendText(targetType, text) {
+    if (!text.trim()) return;
+    // Add to local chat log
+    setKingChats(prev => {
+      const prev_msgs = prev[targetType] || [];
+      return { ...prev, [targetType]: [...prev_msgs, { from: 'king', text }] };
+    });
+    // Send via WebSocket
+    mpService.send({ type: 'KING_CHAT', targetPieceType: targetType, text });
+  }
+
   function sendPlayerChat() {
     if (!chatInput.trim()) return;
-    game.playerChatLog.push({ from: 'You', text: chatInput.trim() }); // optimistic
+    game.playerChatLog.push({ from: 'You', text: chatInput.trim() });
     mpService.sendPlayerChat(chatInput.trim());
     setChatInput('');
   }
@@ -82,8 +264,7 @@ export default function MultiplayerGame({ isHost, myPieceType, session, playerNa
     ? 'Game over'
     : game.chess.inCheck() && game.chess.turn() === 'w'
     ? '⚠ King in CHECK!'
-    : game.isThinking
-    ? 'Thinking…'
+    : game.isThinking ? 'Thinking…'
     : game.chess.turn() === 'w'
     ? `Your turn (${myPieceType ? PIECE_LABELS[myPieceType] : '?'})`
     : "Black's turn";
@@ -91,9 +272,14 @@ export default function MultiplayerGame({ isHost, myPieceType, session, playerNa
   const inCheck     = game.chess.inCheck() && game.chess.turn() === 'w';
   const latestEvent = game.eventLog[game.eventLog.length - 1];
 
+  // Find the human player who controls the currently selected piece type
+  const selectedPiecePlayer = game.selectedPiece
+    ? session?.players?.find(p => p.pieceType === game.selectedPiece.type && p.name !== playerName) ?? null
+    : null;
+  const selectedIsHuman = myPieceType === 'K' && !!selectedPiecePlayer;
+
   return (
     <div className="app">
-      {/* Hidden audio element for remote voice stream */}
       <audio ref={voiceCall.audioRef} autoPlay style={{ display: 'none' }} />
 
       <header className="app-header">
@@ -102,9 +288,7 @@ export default function MultiplayerGame({ isHost, myPieceType, session, playerNa
           <span className="app-subtitle mp-mode-badge">
             🌐 Multiplayer
             {myPieceType && (
-              <span className="mp-my-type">
-                {PIECE_SYMBOLS[myPieceType]} {PIECE_LABELS[myPieceType]}
-              </span>
+              <span className="mp-my-type">{PIECE_SYMBOLS[myPieceType]} {PIECE_LABELS[myPieceType]}</span>
             )}
           </span>
         </div>
@@ -112,12 +296,8 @@ export default function MultiplayerGame({ isHost, myPieceType, session, playerNa
         <div className="header-center">
           <div className="mp-players-strip">
             {session?.players?.map((p, i) => (
-              <span
-                key={i}
-                className={`mp-player-chip ${p.name === playerName ? 'mp-player-chip--me' : ''}`}
-              >
-                {p.pieceType ? PIECE_SYMBOLS[p.pieceType] : '?'} {p.name}
-                {p.isHost ? ' 👑' : ''}
+              <span key={i} className={`mp-player-chip ${p.name === playerName ? 'mp-player-chip--me' : ''}`}>
+                {p.pieceType ? PIECE_SYMBOLS[p.pieceType] : '?'} {p.name}{p.isHost ? ' 👑' : ''}
               </span>
             ))}
             {(game.claudeTypes || []).map(t => (
@@ -129,25 +309,17 @@ export default function MultiplayerGame({ isHost, myPieceType, session, playerNa
         </div>
 
         <div className="header-right">
-          {/* Active voice call indicator */}
           {voiceCall.inCall && (
-            <span className="mp-call-indicator" title={`In call with ${PIECE_LABELS[voiceCall.callWithType] || voiceCall.callWithType} player`}>
+            <button className="mp-call-indicator" onClick={handleEndCall} title="Click to end call">
               📞 {myPieceType === 'K'
-                ? PIECE_LABELS[voiceCall.callWithType] || voiceCall.callWithType
-                : 'King'}
-            </span>
+                ? (PIECE_LABELS[voiceCall.callWithType] ?? voiceCall.callWithType)
+                : 'King'} ✕
+            </button>
           )}
-
           {statusText && (
             <span className={`status-text ${inCheck ? 'in-check' : ''}`}>{statusText}</span>
           )}
-          <button
-            className="btn-voice"
-            onClick={() => setShowChat(c => !c)}
-            title="Team chat"
-          >
-            💬
-          </button>
+          <button className="btn-voice" onClick={() => setShowChat(c => !c)} title="Team chat">💬</button>
           <button className="btn-voice" onClick={toggleVoice} title={voiceOn ? 'Mute' : 'Unmute'}>
             {voiceOn ? '🔊' : '🔇'}
           </button>
@@ -157,7 +329,6 @@ export default function MultiplayerGame({ isHost, myPieceType, session, playerNa
         </div>
       </header>
 
-      {/* Team chat overlay */}
       {showChat && (
         <div className="mp-team-chat-panel">
           <div className="mp-team-chat-header">
@@ -167,9 +338,7 @@ export default function MultiplayerGame({ isHost, myPieceType, session, playerNa
           <div className="mp-team-chat-log">
             {game.playerChatLog.length === 0 && <p className="mp-chat-empty">No messages yet…</p>}
             {game.playerChatLog.map((m, i) => (
-              <div key={i} className="mp-chat-msg">
-                <strong>{m.from}:</strong> {m.text}
-              </div>
+              <div key={i} className="mp-chat-msg"><strong>{m.from}:</strong> {m.text}</div>
             ))}
           </div>
           <div className="mp-chat-input-row">
@@ -187,17 +356,12 @@ export default function MultiplayerGame({ isHost, myPieceType, session, playerNa
 
       <main className="app-main">
         <div className="board-section">
-          {/* Non-King players: show who can chat */}
           {myPieceType && myPieceType !== 'K' && (
             <div className="mp-knight-notice">
-              💬 Only the <strong>King</strong> commander can chat with pieces.
-              You can still move your {PIECE_LABELS[myPieceType]}s by clicking squares.
-              {voiceCall.inCall && (
-                <span className="mp-call-notice"> 📞 King is calling…</span>
-              )}
+              💬 Only the <strong>King</strong> commander can initiate chats.
+              Move your {PIECE_LABELS[myPieceType]}s by clicking squares.
             </div>
           )}
-
           <ChessBoard
             board={game.board}
             selectedPiece={game.selectedPiece}
@@ -206,11 +370,9 @@ export default function MultiplayerGame({ isHost, myPieceType, session, playerNa
             lastMove={game.lastMove}
             onSquareClick={game.handleSquareClick}
           />
-
           {latestEvent && latestEvent.type === 'capture' && (
             <div className="event-strip event-capture">⚔ {latestEvent.text}</div>
           )}
-
           <div className="mp-event-log">
             {game.eventLog.slice(-4).map(e => (
               <div key={e.id} className="mp-event-entry">{e.text}</div>
@@ -220,20 +382,73 @@ export default function MultiplayerGame({ isHost, myPieceType, session, playerNa
 
         <div className="chat-section">
           {myPieceType === 'K' ? (
-            /* King player gets full piece chat + voice call auto-triggers */
-            <PieceChat
-              selectedPiece={game.selectedPiece}
-              pieceState={game.selectedPiece ? game.pieceStates[game.selectedPiece.square] : null}
-              isThinking={game.isThinking}
-              onSendMessage={game.handlePlayerChat}
-              onClose={() => game.handleSquareClick(game.selectedPiece?.square)}
-              voiceCallActive={voiceCall.inCall && voiceCall.callWithType === game.selectedPiece?.type}
-            />
+            // ── King right panel ────────────────────────────────────────────
+            selectedIsHuman ? (
+              // Human player controls this piece → player-to-player chat + call button
+              <PlayerPieceChat
+                pieceType={game.selectedPiece.type}
+                playerName={selectedPiecePlayer.name}
+                inCall={voiceCall.inCall && voiceCall.callWithType === game.selectedPiece.type}
+                onStartCall={() => handleStartCall(game.selectedPiece.type)}
+                onEndCall={handleEndCall}
+                onClose={() => game.handleSquareClick(game.selectedPiece?.square)}
+                chatLog={kingChats[game.selectedPiece?.type] || []}
+                onSend={(text) => handleKingSendText(game.selectedPiece.type, text)}
+              />
+            ) : (
+              // Claude controls this piece → normal singleplayer bot chat
+              <PieceChat
+                selectedPiece={game.selectedPiece}
+                pieceState={game.selectedPiece ? game.pieceStates[game.selectedPiece.square] : null}
+                isThinking={game.isThinking}
+                onSendMessage={game.handlePlayerChat}
+                onClose={() => game.handleSquareClick(game.selectedPiece?.square)}
+              />
+            )
           ) : (
-            /* Other players: read-only piece status */
-            <div className="mp-piece-status-panel">
-              {game.selectedPiece ? (
-                <>
+            // ── Non-King player right panel ─────────────────────────────────
+            // King command channel is always open — primary UI for piece players
+            <div className="piece-player-panel">
+
+              {/* ── Command channel: always visible ── */}
+              <div className="command-channel">
+                <div className="command-channel-header">
+                  {voiceCall.inCall
+                    ? <span className="cc-title cc-title--call">📞 King is calling</span>
+                    : <span className="cc-title">♔ Command Channel</span>
+                  }
+                  <span className="cc-subtitle">{PIECE_SYMBOLS[myPieceType]} {PIECE_LABELS[myPieceType]} Commander</span>
+                </div>
+
+                <div className="cc-log">
+                  {(!kingChats[myPieceType] || kingChats[myPieceType].length === 0) && (
+                    <p className="cc-empty">Waiting for orders from the King…</p>
+                  )}
+                  {(kingChats[myPieceType] || []).map((m, i) => (
+                    <div key={i} className={`cc-msg cc-msg-${m.from === 'king' ? 'left' : 'right'}`}>
+                      <span className="cc-msg-from">{m.from === 'king' ? '♔ King' : `${PIECE_SYMBOLS[myPieceType]} You`}</span>
+                      <p className="cc-msg-text">{m.text}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="ppc-input-row">
+                  <KingReplyInput
+                    myPieceType={myPieceType}
+                    onSend={(text) => {
+                      setKingChats(prev => {
+                        const prev_msgs = prev[myPieceType] || [];
+                        return { ...prev, [myPieceType]: [...prev_msgs, { from: myPieceType, text }] };
+                      });
+                      mpService.sendPiecePlayerReply(text);
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* ── Selected piece stats (below command channel) ── */}
+              {game.selectedPiece && (
+                <div className="cc-piece-stats">
                   <div className="mp-piece-status-header">
                     <span className="mp-piece-status-name">
                       {game.pieceStates[game.selectedPiece.square]?.name || game.selectedPiece.type}
@@ -246,49 +461,19 @@ export default function MultiplayerGame({ isHost, myPieceType, session, playerNa
                     <div className="mp-stat-row">
                       <span>Trust</span>
                       <div className="mp-stat-bar">
-                        <div
-                          className="mp-stat-fill"
-                          style={{ width: `${game.pieceStates[game.selectedPiece.square]?.trust ?? 0}%`, background: '#ff69b4' }}
-                        />
+                        <div className="mp-stat-fill" style={{ width: `${game.pieceStates[game.selectedPiece.square]?.trust ?? 0}%`, background: '#ff69b4' }} />
                       </div>
                       <span>{game.pieceStates[game.selectedPiece.square]?.trust ?? 0}</span>
                     </div>
                     <div className="mp-stat-row">
                       <span>Love</span>
                       <div className="mp-stat-bar">
-                        <div
-                          className="mp-stat-fill"
-                          style={{ width: `${game.pieceStates[game.selectedPiece.square]?.love ?? 0}%`, background: '#e05080' }}
-                        />
+                        <div className="mp-stat-fill" style={{ width: `${game.pieceStates[game.selectedPiece.square]?.love ?? 0}%`, background: '#e05080' }} />
                       </div>
                       <span>{game.pieceStates[game.selectedPiece.square]?.love ?? 0}</span>
                     </div>
                   </div>
-                  {/* Voice call banner — shown when King is calling this piece's player */}
-                  {voiceCall.inCall && (
-                    <div className="mp-call-banner">
-                      📞 King is speaking with your {PIECE_LABELS[myPieceType]}s
-                    </div>
-                  )}
-                  <p className="mp-piece-status-hint">Select a target square to move this piece.</p>
-                  <div className="mp-piece-msgs">
-                    {(game.pieceStates[game.selectedPiece.square]?.messages || []).map(m => (
-                      <div key={m.id} className={`msg-row msg-row-${m.type === 'player' ? 'right' : 'left'}`}>
-                        <div className={`bubble ${m.type === 'player' ? 'bubble-player' : 'bubble-piece'}`}>
-                          {m.text}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              ) : (
-                <div className="no-piece">
-                  <p>Click one of your <strong>{myPieceType ? PIECE_LABELS[myPieceType] : 'piece'}s</strong> to select it</p>
-                  {voiceCall.inCall && (
-                    <div className="mp-call-banner">
-                      📞 King is calling you
-                    </div>
-                  )}
+                  <p className="mp-piece-status-hint">Click a target square to move this piece.</p>
                 </div>
               )}
             </div>

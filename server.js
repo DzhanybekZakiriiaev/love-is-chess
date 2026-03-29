@@ -270,6 +270,33 @@ wss.on('connection', (ws) => {
         break;
       }
 
+      // ── KING → PIECE-PLAYER TEXT CHAT ───────────────────────────────────────
+      case 'KING_CHAT': {
+        const session = sessions.get(meta.sessionId);
+        if (!session || meta.pieceType !== 'K') return;
+        const target = session.players.find(p => p.pieceType === msg.targetPieceType);
+        if (!target) return;
+        const tWs = findWsByPlayerId(target.playerId);
+        if (tWs) send(tWs, { type: 'KING_CHAT', text: msg.text, fromName: meta.name });
+        break;
+      }
+
+      // ── PIECE-PLAYER → KING REPLY ────────────────────────────────────────────
+      case 'PIECE_PLAYER_REPLY': {
+        const session = sessions.get(meta.sessionId);
+        if (!session) return;
+        const king = session.players.find(p => p.pieceType === 'K');
+        if (!king) return;
+        const kWs = findWsByPlayerId(king.playerId);
+        if (kWs) send(kWs, {
+          type:       'PIECE_PLAYER_REPLY',
+          pieceType:  meta.pieceType,
+          senderName: meta.name,
+          text:       msg.text,
+        });
+        break;
+      }
+
       // ── WEBRTC SIGNALING (King ↔ piece-type player) ─────────────────────────
 
       // King sends offer → relay to target piece type's player

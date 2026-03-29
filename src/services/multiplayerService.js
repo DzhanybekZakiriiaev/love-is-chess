@@ -101,6 +101,10 @@ class MultiplayerService {
     this.send({ type: 'PLAYER_CHAT', message });
   }
 
+  sendPiecePlayerReply(text) {
+    this.send({ type: 'PIECE_PLAYER_REPLY', text });
+  }
+
   sendWebRTCOffer(targetPieceType, sdp) {
     this.send({ type: 'WEBRTC_OFFER', targetPieceType, sdp });
   }

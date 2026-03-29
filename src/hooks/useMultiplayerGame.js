@@ -564,29 +564,21 @@ export function useMultiplayerGame({ isHost, myPieceType, session, playerName })
     if (cur && cur.square !== square) stopSpeaking();
     setSelectedPiece({ square, type });
 
-    // First-time greeting (only King player can trigger full chat with any piece)
+    // First-time Claude greeting — ONLY for Claude-controlled pieces (not human players)
     const ps = pieceStatesRef.current[square];
-    if (ps && ps.messages.length === 0 && !isThinking && type !== 'K' && myPieceType === 'K') {
-      setIsThinking(true);
-      try {
-        const sysPrompt = buildPieceSystemPrompt(type, ps.name, ps.traits, ps.trust, ps.love);
-        const vis       = buildVisibleBoard(chess, square);
-        await streamPieceMsg(square, type, (onChunk) =>
-          getPieceGreeting(sysPrompt, ps.name, square, vis, onChunk)
-        );
-      } catch {}
-      setIsThinking(false);
-    } else if (ps && ps.messages.length === 0 && !isThinking && type !== 'K' && myPieceType === type) {
-      // Non-knight players get a brief greeting from their own piece type
-      setIsThinking(true);
-      try {
-        const sysPrompt = buildPieceSystemPrompt(type, ps.name, ps.traits, ps.trust, ps.love);
-        const vis       = buildVisibleBoard(chess, square);
-        await streamPieceMsg(square, type, (onChunk) =>
-          getPieceGreeting(sysPrompt, ps.name, square, vis, onChunk)
-        );
-      } catch {}
-      setIsThinking(false);
+    const isClaudeControlled = claudeTypes.includes(type);
+    if (ps && ps.messages.length === 0 && !isThinking && type !== 'K' && isClaudeControlled) {
+      if (myPieceType === 'K' || myPieceType === type) {
+        setIsThinking(true);
+        try {
+          const sysPrompt = buildPieceSystemPrompt(type, ps.name, ps.traits, ps.trust, ps.love);
+          const vis       = buildVisibleBoard(chess, square);
+          await streamPieceMsg(square, type, (onChunk) =>
+            getPieceGreeting(sysPrompt, ps.name, square, vis, onChunk)
+          );
+        } catch {}
+        setIsThinking(false);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameOver, validMoves, isThinking, myPieceType]);
@@ -623,6 +615,9 @@ export function useMultiplayerGame({ isHost, myPieceType, session, playerName })
       await executeMove(square, type, targetSquare);
       return;
     }
+
+    // Only call Claude for pieces Claude actually controls — not human piece players
+    if (!claudeTypes.includes(type)) return;
 
     adjustStats(square, 0, 3);
     setIsThinking(true);
